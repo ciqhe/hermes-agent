@@ -11,6 +11,9 @@ requires-python = ">=3.11"
 authors = [{ name = "Nous Research" }]
 license = { text = "MIT" }
 dependencies = [
+  # 新增：适配 Vercel 预安装 Web 服务依赖，不改动原有注释和顺序
+  "fastapi==0.133.1",
+  "uvicorn[standard]==0.41.0",
   # Core — every direct dep is exact-pinned to ==X.Y.Z (no ranges).
   # Rationale: ranges allow PyPI to ship a fresh version of a transitive
   # at any time without a code review on our side. Exact pins mean the
@@ -76,7 +79,7 @@ exa = ["exa-py==2.10.2"]
 firecrawl = ["firecrawl-py==4.17.0"]
 parallel-web = ["parallel-web==0.4.2"]
 # Image generation backends
-fal = ["fal-client==0.13.1"]
+fal = ["fal-client==0.133.1"]
 # Edge TTS — default TTS provider but still optional (users can pick
 # ElevenLabs / OpenAI / MiniMax instead).
 edge-tts = ["edge-tts==7.2.7"]
@@ -175,7 +178,7 @@ youtube = [
   "youtube-transcript-api==1.2.4",
 ]
 # `hermes dashboard` (localhost SPA + API).  Not in core to keep the default install lean.
-web = ["fastapi==0.133.1", "uvicorn[standard]==0.41.0"]
+web = []
 all = [
   # Policy (2026-05-12): `[all]` includes only extras that genuinely
   # CAN'T be lazy-installed via `tools/lazy_deps.py` — i.e. things every
@@ -271,6 +274,5 @@ select = ["PLW1514"]
 "skills/**" = ["PLW1514"]
 "optional-skills/**" = ["PLW1514"]
 "plugins/**" = ["PLW1514"]
-
 [tool.vercel]
 entrypoint = "hermes_cli.web_server:app"
