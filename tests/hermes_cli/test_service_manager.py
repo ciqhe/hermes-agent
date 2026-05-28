@@ -538,6 +538,11 @@ def test_s6_register_creates_service_dir_and_triggers_scan(
     run_text = run_path.read_text()
     assert "hermes -p coder gateway run" in run_text
     assert "s6-setuidgid hermes" in run_text
+    # Sentinel marking this as the supervised-child invocation. Without
+    # it, the supervised `gateway run` would re-enter the s6 redirect
+    # in `_gateway_command_inner` and recurse. See the matching guard
+    # in hermes_cli/gateway.py::_gateway_command_inner.
+    assert "export HERMES_S6_SUPERVISED_CHILD=1" in run_text
 
     log_run = svc_dir / "log" / "run"
     assert log_run.is_file()
@@ -549,6 +554,16 @@ def test_s6_register_creates_service_dir_and_triggers_scan(
     assert "logs/gateways/coder" in log_text
     assert "/opt/data/logs/gateways/coder" not in log_text, (
         "log_dir was hard-coded; must use ${HERMES_HOME} at run time"
+    )
+    # `1` action directive forwards lines to stdout BEFORE the file
+    # destination so the supervised gateway's stdout (including the
+    # rich-console banner and plain print() output) reaches docker
+    # logs, not just the rotated file. See _render_log_run's docstring
+    # for the full output-routing rationale.
+    assert "s6-log 1 " in log_text, (
+        "log/run must include the `1` action directive before the file "
+        "destination so supervised stdout reaches docker logs. Saw: "
+        f"{log_text!r}"
     )
 
     # s6-svscanctl -a was invoked against the scandir

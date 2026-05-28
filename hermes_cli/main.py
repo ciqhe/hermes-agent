@@ -65,6 +65,39 @@ import os
 import sys
 
 
+# Mouse-tracking residue suppression — runs BEFORE every other import on the
+# TUI hot path so the terminal stops emitting SGR/X10 mouse reports while the
+# Python launcher is still doing imports (≈100–300ms in cooked + echo mode,
+# before the Node TUI takes stdin into raw mode). During that window any
+# incoming bytes are echoed straight back to the user's shell scrollback as
+# ``^[[<…M`` text. The TUI itself runs `resetTerminalModes()` again in
+# `entry.tsx`; this is just the earlier cousin. ``HERMES_TUI_NO_EARLY_DISABLE``
+# escapes the behaviour for diagnostics.
+def _suppress_mouse_residue_early() -> None:
+    if os.environ.get("HERMES_TUI_NO_EARLY_DISABLE") == "1":
+        return
+    if not (os.environ.get("HERMES_TUI") == "1" or "--tui" in sys.argv[1:]):
+        return
+    try:
+        # Skip when stdout is redirected (`hermes --tui … >log`, CI capture):
+        # the bytes can't reach the terminal anyway and would just pollute
+        # the log with raw CSI.
+        if not os.isatty(1):
+            return
+        # Disable every mouse-tracking variant we know about. Idempotent and
+        # safe to send even when no tracking is currently asserted.
+        os.write(
+            1,
+            b"\x1b[?1003l\x1b[?1002l\x1b[?1001l\x1b[?1000l\x1b[?9l"
+            b"\x1b[?1006l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?2029l",
+        )
+    except OSError:
+        pass
+
+
+_suppress_mouse_residue_early()
+
+
 def _is_termux_startup_environment_fast() -> bool:
     """Tiny Termux check for pre-import startup shortcuts."""
     prefix = os.environ.get("PREFIX", "")
@@ -8928,6 +8961,11 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
         if commit_count == 0:
             _invalidate_update_cache()
+
+            # Even if origin is up to date, the fork may be behind upstream
+            if is_fork and branch == "main":
+                _sync_with_upstream_if_needed(git_cmd, PROJECT_ROOT)
+
             # Restore stash and switch back to original branch if we moved
             if auto_stash_ref is not None:
                 _restore_stashed_changes(
@@ -10735,6 +10773,22 @@ def cmd_dashboard(args):
             sys.exit(1)
         print(f"→ Skipping web UI build (--skip-build); using dist at {_dist_root}")
 
+    # Discover and load plugins so any DashboardAuthProvider plugin
+    # (e.g. plugins/dashboard_auth/nous) registers BEFORE start_server's
+    # fail-closed gate check runs. The top-level argparse setup skips
+    # plugin discovery for built-in subcommands like ``dashboard`` to
+    # save ~500ms startup; we have to trigger it explicitly here because
+    # the dashboard's server-side runtime depends on plugin-registered
+    # providers (image_gen, web, dashboard_auth, …).
+    try:
+        from hermes_cli.plugins import discover_plugins
+        discover_plugins()
+    except Exception as exc:
+        # Discovery failures must not block dashboard startup outright —
+        # log and proceed; the gate's fail-closed branch will surface
+        # the missing-provider state if it matters.
+        print(f"⚠ Plugin discovery failed: {exc}", file=sys.stderr)
+
     from hermes_cli.web_server import start_server
 
     embedded_chat = args.tui or os.environ.get("HERMES_DASHBOARD_TUI") == "1"
@@ -11304,6 +11358,19 @@ def main():
         "--replace",
         action="store_true",
         help="Replace any existing gateway instance (useful for systemd)",
+    )
+    gateway_run.add_argument(
+        "--no-supervise",
+        action="store_true",
+        help=(
+            "Inside the s6-overlay Docker image, normally `gateway run` is "
+            "automatically redirected to the supervised s6 service (so the "
+            "gateway gets auto-restart on crash, plus a supervised dashboard "
+            "if HERMES_DASHBOARD is set). Pass --no-supervise to opt out and "
+            "get the historical pre-s6 foreground behavior: the gateway is "
+            "the container's main process and the container exits with the "
+            "gateway's exit code. No effect outside an s6 container."
+        ),
     )
     _add_accept_hooks_flag(gateway_run)
     _add_accept_hooks_flag(gateway_parser)
@@ -12542,6 +12609,31 @@ Examples:
         help="Also delete the current copy and re-copy the bundled version",
     )
     skills_reset.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompt when using --restore",
+    )
+
+    skills_repair_official = skills_subparsers.add_parser(
+        "repair-official",
+        help="Backfill or restore official optional skills from repo source",
+        description=(
+            "Repair official optional skill provenance. By default, only backfills "
+            "hub metadata for exact matches. Pass --restore to replace missing or "
+            "mutated active copies from optional-skills/, moving existing copies to "
+            "a restore backup first. Use name 'all' to repair every optional skill."
+        ),
+    )
+    skills_repair_official.add_argument(
+        "name", help="Official optional skill folder/frontmatter name, or 'all'"
+    )
+    skills_repair_official.add_argument(
+        "--restore",
+        action="store_true",
+        help="Restore from official optional source, backing up existing matching copies",
+    )
+    skills_repair_official.add_argument(
         "--yes",
         "-y",
         action="store_true",
