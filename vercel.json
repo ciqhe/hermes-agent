@@ -1,15 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-
   "builds": [
     {
-      "src": "hermes_cli/web_server.py",
+      "src": "api.py",
       "use": "@vercel/python"
     }
   ],
-
-  "devCommand": "uvicorn hermes_cli.web_server:app --host 0.0.0.0 --port $PORT",
-
-  "buildCommand": "uv lock"
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api.py"
+    }
+  ]
 }
