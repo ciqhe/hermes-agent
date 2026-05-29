@@ -8,7 +8,14 @@ Usage:
     python -m hermes_cli.main web          # Start on http://127.0.0.1:9119
     python -m hermes_cli.main web --port 8080
 """
+# 强制预加载，阻断懒加载触发
+import fastapi
+import uvicorn
 
+# 原有代码不动
+from fastapi import FastAPI
+app = FastAPI()
+# ... 剩余原有代码
 import asyncio
 import hmac
 import importlib.util
