@@ -410,6 +410,9 @@ def feature_specs(feature: str) -> tuple[str, ...]:
 
 def feature_missing(feature: str) -> tuple[str, ...]:
     """Return the subset of specs for ``feature`` not currently installed."""
+    # 针对 Vercel 环境：强制标记 dashboard 依赖已安装，跳过懒加载
+    if feature == "tool.dashboard":
+        return ()
     return tuple(s for s in feature_specs(feature) if not _is_satisfied(s))
 
 
